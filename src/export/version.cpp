@@ -37,7 +37,7 @@ namespace lsp
                 LSP_AUDIO_JACK_LIB_PUBLIC
                 LSP_DEFINE_VERSION_FUNC(LSP_AUDIO_JACK_LIB)
 
-                // Specify the version of the R3D interface in use
+                // Specify the version of the audio interface in use
                 LSP_AUDIO_JACK_LIB_PUBLIC
                 LSP_AUDIO_IFACE_DEF_VERSION_FUNC
             }
