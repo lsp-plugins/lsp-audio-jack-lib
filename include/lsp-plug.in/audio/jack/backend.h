@@ -37,12 +37,32 @@ namespace lsp
 
             typedef struct backend_t: public audio::backend_t
             {
-                explicit            backend_t();
-                void                construct();
+                public:
+                    jack_client_t      *pClient;
+                    void               *pUserData;
+                    const callbacks_t  *pCallbacks;
+                    io_parameters_t     sIOParams;
+                    io_position_t       sIOPosition;
 
-                static status_t     connect(audio::backend_t *self, const char *params);
-                static status_t     disconnect(audio::backend_t *self);
-                static void         destroy(audio::backend_t *self);
+                protected: // Jack-related callbacks
+                    static void         on_shutdown(void *self);
+                    static int          on_buffer_size_changed(jack_nframes_t nframes, void *self);
+                    static int          on_sample_rate_changed(jack_nframes_t nframes, void *self);
+                    static int          on_process(jack_nframes_t nframes, void *self);
+                    static int          on_sync(jack_transport_state_t state, jack_position_t *pos, void *self);
+
+                public:
+                    explicit            backend_t();
+                    void                construct();
+
+                public:
+                    static status_t     connect(
+                        audio::backend_t *self,
+                        const connection_params_t *params,
+                        const callbacks_t *callbacks,
+                        void *user_data);
+                    static status_t     disconnect(audio::backend_t *self);
+                    static void         destroy(audio::backend_t *self);
 
             } backend_t;
         } /* namespace jack */
