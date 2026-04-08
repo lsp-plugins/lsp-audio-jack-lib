@@ -79,9 +79,18 @@ namespace lsp
 
                 // Export virtual table
                 #define AUDIO_JACK_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
+
                 AUDIO_JACK_BACKEND_EXP(connect);
                 AUDIO_JACK_BACKEND_EXP(disconnect);
                 AUDIO_JACK_BACKEND_EXP(destroy);
+
+                AUDIO_JACK_BACKEND_EXP(register_port);
+                AUDIO_JACK_BACKEND_EXP(unregister_port);
+                AUDIO_JACK_BACKEND_EXP(set_port_latency);
+
+                AUDIO_JACK_BACKEND_EXP(audio_buffer_count);
+                AUDIO_JACK_BACKEND_EXP(get_audio_buffer);
+
                 #undef AUDIO_JACK_BACKEND_EXP
             }
 
@@ -363,7 +372,7 @@ namespace lsp
                 nFirst              = lsp_min(nFirst, port_id_t(port - vPorts));
             }
 
-            port_id_t backend_t::register_port(backend_t *self, const char *id, uint32_t flags)
+            port_id_t backend_t::register_port(audio::backend_t *self, const char *id, uint32_t flags)
             {
                 backend_t * const back  = cast(self);
 
@@ -400,7 +409,7 @@ namespace lsp
                 return port_id_t(port - back->vPorts);
             }
 
-            status_t backend_t::unregister_port(backend_t *self, port_id_t port_id)
+            status_t backend_t::unregister_port(audio::backend_t *self, port_id_t port_id)
             {
                 backend_t * const back  = cast(self);
 
@@ -426,33 +435,7 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            size_t backend_t::audio_buffer_count(backend_t *self, port_id_t port_id)
-            {
-                backend_t * const back  = cast(self);
-                if ((port_id < 0) || (port_id >= back->nCapacity))
-                    return 0;
-
-                port_t * const port = &back->vPorts[port_id];
-                if ((port->nType == PORT_TYPE_FREE) || (port->pPort == NULL))
-                    return 0;
-                return ((port->nType & PORT_TYPE_MASK) == PORT_TYPE_AUDIO) ? 1 : 0;
-            }
-
-            float *backend_t::audio_buffer(backend_t *self, port_id_t port_id, size_t index)
-            {
-                backend_t * const back  = cast(self);
-                if ((port_id < 0) || (port_id >= back->nCapacity))
-                    return NULL;
-
-                port_t * const port = &back->vPorts[port_id];
-                if ((port->nType == PORT_TYPE_FREE) ||
-                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO) ||
-                    (port->pPort == NULL))
-                    return NULL;
-                return static_cast<float *>(jack_port_get_buffer(port->pPort, back->sIOParams.buffer_size));
-            }
-
-            status_t backend_t::set_latency(backend_t *self, port_id_t port_id, uint32_t latency)
+            status_t backend_t::set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency)
             {
                 backend_t * const back  = cast(self);
                 if ((port_id < 0) || (port_id >= back->nCapacity))
@@ -472,6 +455,32 @@ namespace lsp
                     jack_recompute_total_latencies(back->pClient);
 
                 return STATUS_OK;
+            }
+
+            size_t backend_t::audio_buffer_count(audio::backend_t *self, port_id_t port_id)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return 0;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) || (port->pPort == NULL))
+                    return 0;
+                return ((port->nType & PORT_TYPE_MASK) == PORT_TYPE_AUDIO) ? 1 : 0;
+            }
+
+            float *backend_t::get_audio_buffer(audio::backend_t *self, port_id_t port_id, size_t index)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return NULL;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO) ||
+                    (port->pPort == NULL))
+                    return NULL;
+                return static_cast<float *>(jack_port_get_buffer(port->pPort, back->sIOParams.buffer_size));
             }
 
             int backend_t::on_buffer_size_changed(jack_nframes_t nframes, void *self)

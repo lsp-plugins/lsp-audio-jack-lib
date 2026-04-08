@@ -84,15 +84,15 @@ namespace lsp
                         const connection_params_t *params,
                         const callbacks_t *callbacks,
                         void *user_data);
-
-                    static port_id_t    register_port(backend_t *self, const char *id, uint32_t flags);
-                    static status_t     unregister_port(backend_t *self, port_id_t port_id);
-                    static size_t       audio_buffer_count(backend_t *self, port_id_t port_id);
-                    static float       *audio_buffer(backend_t *self, port_id_t port_id, size_t index);
-                    static status_t     set_latency(backend_t *self, port_id_t port_id, uint32_t latency);
-
                     static status_t     disconnect(audio::backend_t *self);
                     static void         destroy(audio::backend_t *self);
+
+                    static port_id_t    register_port(audio::backend_t *self, const char *id, uint32_t flags);
+                    static status_t     unregister_port(audio::backend_t *self, port_id_t port_id);
+                    static status_t     set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency);
+
+                    static size_t       audio_buffer_count(audio::backend_t *self, port_id_t port_id);
+                    static float       *get_audio_buffer(audio::backend_t *self, port_id_t port_id, size_t index);
 
             } backend_t;
         } /* namespace jack */
