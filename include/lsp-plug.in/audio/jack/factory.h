@@ -33,7 +33,7 @@ namespace lsp
         namespace jack
         {
             // JACK audio backend factory
-            typedef struct factory_t: public audio::factory_t
+            typedef struct LSP_HIDDEN_MODIFIER factory_t: public audio::factory_t
             {
                 static const audio::backend_metadata_t      sMetadata[];
 

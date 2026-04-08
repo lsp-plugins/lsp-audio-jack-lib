@@ -35,7 +35,7 @@ namespace lsp
         namespace jack
         {
 
-            typedef struct backend_t: public audio::backend_t
+            typedef struct LSP_HIDDEN_MODIFIER backend_t: public audio::backend_t
             {
                 protected:
                     static constexpr size_t MAX_PORT_ID_BYTES   = 16;
@@ -91,6 +91,9 @@ namespace lsp
                     static port_id_t    register_port(audio::backend_t *self, const char *id, uint32_t flags);
                     static status_t     unregister_port(audio::backend_t *self, port_id_t port_id);
                     static status_t     set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency);
+
+                    static status_t     connect_ports(audio::backend_t *self, const char *source, const char *destination);
+                    static status_t     disconnect_ports(audio::backend_t *self, const char *source, const char *destination);
 
                     static size_t       audio_buffers_count(audio::backend_t *self, port_id_t port_id);
                     static float       *get_audio_buffer(audio::backend_t *self, port_id_t port_id, size_t index);

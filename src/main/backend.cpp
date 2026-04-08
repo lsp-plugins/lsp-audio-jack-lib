@@ -91,6 +91,9 @@ namespace lsp
                 AUDIO_JACK_BACKEND_EXP(unregister_port);
                 AUDIO_JACK_BACKEND_EXP(set_port_latency);
 
+                AUDIO_JACK_BACKEND_EXP(connect_ports);
+                AUDIO_JACK_BACKEND_EXP(disconnect_ports);
+
                 AUDIO_JACK_BACKEND_EXP(audio_buffers_count);
                 AUDIO_JACK_BACKEND_EXP(get_audio_buffer);
 
@@ -464,6 +467,38 @@ namespace lsp
                 return STATUS_OK;
             }
 
+            status_t backend_t::connect_ports(audio::backend_t *self, const char *source, const char *destination)
+            {
+                backend_t * const back  = cast(self);
+                if (back->pClient == NULL)
+                    return STATUS_BAD_STATE;
+
+                const int result = jack_connect(back->pClient, source, destination);
+                switch (result)
+                {
+                    case 0: return STATUS_OK;
+                    case EEXIST: return STATUS_ALREADY_BOUND;
+                    default: break;
+                }
+                return STATUS_UNKNOWN_ERR;
+            }
+
+            status_t backend_t::disconnect_ports(audio::backend_t *self, const char *source, const char *destination)
+            {
+                backend_t * const back  = cast(self);
+                if (back->pClient == NULL)
+                    return STATUS_BAD_STATE;
+
+                const int result = jack_disconnect(back->pClient, source, destination);
+                switch (result)
+                {
+                    case 0: return STATUS_OK;
+                    case EEXIST: return STATUS_ALREADY_BOUND;
+                    default: break;
+                }
+                return STATUS_UNKNOWN_ERR;
+            }
+
             size_t backend_t::audio_buffers_count(audio::backend_t *self, port_id_t port_id)
             {
                 backend_t * const back  = cast(self);
@@ -485,8 +520,8 @@ namespace lsp
                     return NULL;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType != PORT_TYPE_AUDIO) ||
-                    (port->pPort == NULL))
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO))
                     return NULL;
                 return static_cast<float *>(port->pBuffer);
             }
