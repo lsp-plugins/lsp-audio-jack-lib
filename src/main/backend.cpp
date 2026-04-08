@@ -25,7 +25,10 @@
 #include <lsp-plug.in/audio/jack/backend.h>
 #include <lsp-plug.in/stdlib/string.h>
 
+#include <jack/midiport.h>
+
 #include <stdlib.h>
+#include <errno.h>
 
 namespace lsp
 {
@@ -88,8 +91,12 @@ namespace lsp
                 AUDIO_JACK_BACKEND_EXP(unregister_port);
                 AUDIO_JACK_BACKEND_EXP(set_port_latency);
 
-                AUDIO_JACK_BACKEND_EXP(audio_buffer_count);
+                AUDIO_JACK_BACKEND_EXP(audio_buffers_count);
                 AUDIO_JACK_BACKEND_EXP(get_audio_buffer);
+
+                AUDIO_JACK_BACKEND_EXP(midi_events_count);
+                AUDIO_JACK_BACKEND_EXP(read_midi_event);
+                AUDIO_JACK_BACKEND_EXP(write_midi_event);
 
                 #undef AUDIO_JACK_BACKEND_EXP
             }
@@ -391,7 +398,7 @@ namespace lsp
                 }
 
                 // Add port
-                port_t * port = back->alloc_port(id, flags);
+                port_t *port = back->alloc_port(id, flags);
                 lsp_finally { back->free_port(port); };
 
                 // Register port if connected to client
@@ -457,16 +464,18 @@ namespace lsp
                 return STATUS_OK;
             }
 
-            size_t backend_t::audio_buffer_count(audio::backend_t *self, port_id_t port_id)
+            size_t backend_t::audio_buffers_count(audio::backend_t *self, port_id_t port_id)
             {
                 backend_t * const back  = cast(self);
                 if ((port_id < 0) || (port_id >= back->nCapacity))
                     return 0;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType == PORT_TYPE_FREE) || (port->pPort == NULL))
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO) ||
+                    (port->pPort == NULL))
                     return 0;
-                return ((port->nType & PORT_TYPE_MASK) == PORT_TYPE_AUDIO) ? 1 : 0;
+                return (port->pBuffer != NULL) ? 1 : 0;
             }
 
             float *backend_t::get_audio_buffer(audio::backend_t *self, port_id_t port_id, size_t index)
@@ -476,11 +485,68 @@ namespace lsp
                     return NULL;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType == PORT_TYPE_FREE) ||
-                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO) ||
+                if ((port->nType != PORT_TYPE_AUDIO) ||
                     (port->pPort == NULL))
                     return NULL;
-                return static_cast<float *>(jack_port_get_buffer(port->pPort, back->sIOParams.buffer_size));
+                return static_cast<float *>(port->pBuffer);
+            }
+
+            size_t backend_t::midi_events_count(audio::backend_t *self, port_id_t port_id)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return 0;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType != (PORT_TYPE_MIDI | PORT_DIR_IN)) ||
+                    (port->pBuffer == NULL))
+                    return 0;
+
+                return jack_midi_get_event_count(port->pBuffer);
+            }
+
+            status_t backend_t::read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t index)
+            {
+                if (event == NULL)
+                    return STATUS_BAD_ARGUMENTS;
+
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return STATUS_INVALID_VALUE;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType != (PORT_TYPE_MIDI | PORT_DIR_IN)) ||
+                    (port->pBuffer == NULL))
+                    return STATUS_BAD_FORMAT;
+
+                // Obtain MIDI event
+                jack_midi_event_t ev;
+                const int result = jack_midi_event_get(&ev, port->pBuffer, index);
+                if (result == 0)
+                {
+                    event->timestamp        = uint32_t(ev.time);
+                    event->size             = uint32_t(ev.size);
+                    event->data             = reinterpret_cast<uint8_t *>(ev.buffer);
+
+                    return STATUS_OK;
+                }
+
+                return (result == ENODATA) ? STATUS_NO_DATA : STATUS_UNKNOWN_ERR;
+            }
+
+            uint8_t *backend_t::write_midi_event(audio::backend_t *self, port_id_t port_id, uint32_t timestamp, uint32_t size)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return NULL;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType != (PORT_TYPE_MIDI | PORT_DIR_OUT)) ||
+                    (port->pBuffer == NULL))
+                    return NULL;
+
+                // Submit MIDI event
+                return reinterpret_cast<uint8_t *>(jack_midi_event_reserve(port->pBuffer, timestamp, size));
             }
 
             int backend_t::on_buffer_size_changed(jack_nframes_t nframes, void *self)
@@ -512,11 +578,41 @@ namespace lsp
             {
                 backend_t * const back = cast(self);
 
+                // Issue on_process() callback
                 const callbacks_t * const cb = back->pCallbacks;
-                const status_t res = ((cb) && (cb->on_process)) ?
-                    cb->on_process(back->pUserData, &back->sIOPosition) :
-                    STATUS_OK;
-                return (res == STATUS_OK) ? 0 : -1;
+
+                if ((cb) && (cb->on_process))
+                {
+                    // Obtain all buffers
+                    for (size_t i=0, n=back->nCapacity; i<n; ++i)
+                    {
+                        port_t * const port = &back->vPorts[i];
+                        if ((port->nType == PORT_TYPE_FREE) ||
+                            (port->pPort == NULL))
+                            continue;
+
+                        port->pBuffer = jack_port_get_buffer(port->pPort, nframes);
+                        if ((port->nType == (PORT_TYPE_MIDI | PORT_DIR_OUT)) && (port->pBuffer != NULL))
+                            jack_midi_clear_buffer(port->pBuffer);
+                    }
+
+                    // Issue the processing callback
+                    status_t res = cb->on_process(back->pUserData, &back->sIOPosition, uint32_t(nframes));
+
+                    // Cleanup pointers to buffers
+                    for (size_t i=0, n=back->nCapacity; i<n; ++i)
+                    {
+                        port_t * const port = &back->vPorts[i];
+                        if ((port->nType == PORT_TYPE_FREE) ||
+                            (port->pPort == NULL))
+                            continue;
+
+                        port->pBuffer = NULL;
+                    }
+
+                    return (res == STATUS_OK) ? 0 : -1;
+                }
+                return 0;
             }
 
             int backend_t::on_sync(jack_transport_state_t state, jack_position_t *pos, void *self)

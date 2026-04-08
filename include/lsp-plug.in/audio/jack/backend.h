@@ -45,6 +45,7 @@ namespace lsp
                         uint32_t        nType;
                         uint32_t        nLatency;
                         jack_port_t    *pPort;
+                        void           *pBuffer;
 
                         char            sID[MAX_PORT_ID_BYTES];
                     } port_t;
@@ -91,8 +92,12 @@ namespace lsp
                     static status_t     unregister_port(audio::backend_t *self, port_id_t port_id);
                     static status_t     set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency);
 
-                    static size_t       audio_buffer_count(audio::backend_t *self, port_id_t port_id);
+                    static size_t       audio_buffers_count(audio::backend_t *self, port_id_t port_id);
                     static float       *get_audio_buffer(audio::backend_t *self, port_id_t port_id, size_t index);
+
+                    static size_t       midi_events_count(audio::backend_t *self, port_id_t port_id);
+                    static status_t     read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t index);
+                    static uint8_t     *write_midi_event(audio::backend_t *self, port_id_t port_id, uint32_t timestamp, uint32_t size);
 
             } backend_t;
         } /* namespace jack */
