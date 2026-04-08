@@ -37,6 +37,18 @@ namespace lsp
 
             typedef struct backend_t: public audio::backend_t
             {
+                protected:
+                    static constexpr size_t MAX_PORT_ID_BYTES   = 16;
+
+                    typedef struct port_t
+                    {
+                        uint32_t        nType;
+                        uint32_t        nLatency;
+                        jack_port_t    *pPort;
+
+                        char            sID[MAX_PORT_ID_BYTES];
+                    } port_t;
+
                 public:
                     jack_client_t      *pClient;
                     void               *pUserData;
@@ -44,12 +56,23 @@ namespace lsp
                     io_parameters_t     sIOParams;
                     io_position_t       sIOPosition;
 
+                    port_t             *vPorts;
+                    port_id_t           nFirst;
+                    port_id_t           nCapacity;
+
+                protected:
+                    port_t             *alloc_port(const char *id, uint32_t flags);
+                    void                free_port(port_t *port);
+                    status_t            register_ports(jack_client_t *client);
+                    void                unregister_ports(jack_client_t *client);
+
                 protected: // Jack-related callbacks
                     static void         on_shutdown(void *self);
                     static int          on_buffer_size_changed(jack_nframes_t nframes, void *self);
                     static int          on_sample_rate_changed(jack_nframes_t nframes, void *self);
                     static int          on_process(jack_nframes_t nframes, void *self);
                     static int          on_sync(jack_transport_state_t state, jack_position_t *pos, void *self);
+                    static int          on_latency_sync(jack_latency_callback_mode_t mode, void *self);
 
                 public:
                     explicit            backend_t();
@@ -61,6 +84,13 @@ namespace lsp
                         const connection_params_t *params,
                         const callbacks_t *callbacks,
                         void *user_data);
+
+                    static port_id_t    register_port(backend_t *self, const char *id, uint32_t flags);
+                    static status_t     unregister_port(backend_t *self, port_id_t port_id);
+                    static size_t       audio_buffer_count(backend_t *self, port_id_t port_id);
+                    static float       *audio_buffer(backend_t *self, port_id_t port_id, size_t index);
+                    static status_t     set_latency(backend_t *self, port_id_t port_id, uint32_t latency);
+
                     static status_t     disconnect(audio::backend_t *self);
                     static void         destroy(audio::backend_t *self);
 

@@ -33,6 +33,9 @@ namespace lsp
     {
         namespace jack
         {
+            static constexpr uint32_t PORT_TYPE_FREE        = 0xffffffff;
+            static constexpr uint32_t PORT_MASK_ALL         = PORT_DIR_MASK | PORT_TYPE_MASK;
+
             static inline jack::backend_t *cast(audio::backend_t *self)
             {
                 return static_cast<jack::backend_t *>(self);
@@ -70,12 +73,59 @@ namespace lsp
                 npos->beats_per_minute_change   = 0.0f;
                 npos->ticks_per_beat            = 4096.0f;
 
+                vPorts                      = NULL;
+                nFirst                      = 0;
+                nCapacity                   = 0;
+
                 // Export virtual table
                 #define AUDIO_JACK_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
                 AUDIO_JACK_BACKEND_EXP(connect);
                 AUDIO_JACK_BACKEND_EXP(disconnect);
                 AUDIO_JACK_BACKEND_EXP(destroy);
                 #undef AUDIO_JACK_BACKEND_EXP
+            }
+
+            status_t backend_t::register_ports(jack_client_t *client)
+            {
+                for (size_t i=0, n=nCapacity; i<n; ++i)
+                {
+                    port_t * const port = &vPorts[i];
+                    if ((port->nType == PORT_TYPE_FREE) ||
+                        (port->pPort != NULL))
+                        continue;
+
+                    // Determine flags
+                    size_t port_flags       = ((port->nType & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
+                    const char *port_type   = NULL;
+                    switch (port->nType & PORT_TYPE_MASK)
+                    {
+                        case PORT_TYPE_AUDIO:   port_type = JACK_DEFAULT_AUDIO_TYPE; break;
+                        case PORT_TYPE_MIDI:    port_type = JACK_DEFAULT_MIDI_TYPE; break;
+                        default: return STATUS_BAD_STATE;
+                    }
+
+                    // Register port
+                    port->pPort         = jack_port_register(client, port->sID, port_type, port_flags, 0);
+                    if (port->pPort == NULL)
+                        return STATUS_UNKNOWN_ERR;
+                }
+
+                return STATUS_OK;
+            }
+
+            void backend_t::unregister_ports(jack_client_t *client)
+            {
+                for (size_t i=0, n=nCapacity; i<n; ++i)
+                {
+                    port_t * const port = &vPorts[i];
+                    if ((port->nType == PORT_TYPE_FREE) ||
+                        (port->pPort == NULL))
+                        continue;
+
+                    // Unregister port
+                    jack_port_unregister(client, port->pPort);
+                    port->pPort = NULL;
+                }
             }
 
             status_t backend_t::connect(
@@ -167,8 +217,16 @@ namespace lsp
                     return STATUS_DISCONNECTED;
                 }
 
+                // Register previously defined ports
+                status_t res = back->register_ports(client);
+                if (res != STATUS_OK)
+                {
+                    back->unregister_ports(client);
+                    return res;
+                }
+
                 // Issue connected callback
-                status_t res = ((callbacks) && (callbacks->on_connected)) ?
+                res = ((callbacks) && (callbacks->on_connected)) ?
                     callbacks->on_connected(user_data, &io_params) :
                     STATUS_OK;
                 lsp_finally {
@@ -203,8 +261,8 @@ namespace lsp
 
             status_t backend_t::disconnect(audio::backend_t *self)
             {
-                backend_t * const back  = cast(self);
-                jack_client_t *client   = back->pClient;
+                backend_t * const back          = cast(self);
+                jack_client_t * const client    = back->pClient;
                 if (client == NULL)
                     return STATUS_BAD_STATE;
 
@@ -213,6 +271,9 @@ namespace lsp
                 const callbacks_t * const cb = back->pCallbacks;
                 status_t res = ((cb) && (cb->on_deactivated)) ?
                     cb->on_deactivated(back->pUserData) : STATUS_OK;
+
+                // Unregister ports
+                back->unregister_ports(client);
 
                 // Close client connection
                 jack_client_close(client);
@@ -227,8 +288,18 @@ namespace lsp
 
             void backend_t::destroy(audio::backend_t *self)
             {
+                backend_t * const back          = cast(self);
+
                 // Issue disconnect and free allocated memory
                 disconnect(self);
+
+                // Free allocated memory for ports
+                back->nFirst                = 0;
+                back->nCapacity             = 0;
+                if (back->vPorts != NULL)
+                    free(back->vPorts);
+
+                // Deallocate memory
                 free(self);
             }
 
@@ -238,6 +309,169 @@ namespace lsp
                 const callbacks_t * const cb = back->pCallbacks;
                 if ((cb) && (cb->on_connection_lost))
                     cb->on_connection_lost(back->pUserData);
+            }
+
+            backend_t::port_t *backend_t::alloc_port(const char *id, uint32_t flags)
+            {
+                uint32_t first      = nFirst;
+                uint32_t capacity   = nCapacity;
+
+                // Check that memory should be re-allocated
+                if (first >= capacity)
+                {
+                    const size_t new_cap    = lsp_max((nCapacity << 1), 4);
+                    port_t * const items    = static_cast<port_t *>(realloc(vPorts, sizeof(port_t) * capacity));
+                    if (!items)
+                        return NULL;
+
+                    for (size_t i=capacity; i<new_cap; ++i)
+                        items[i].nType          = PORT_TYPE_FREE;
+
+                    capacity                = new_cap;
+                    vPorts                  = items;
+                    nCapacity               = capacity;
+                }
+
+                // Find unused port in list
+                for ( ; first < capacity; ++first)
+                {
+                    port_t * const port     = &vPorts[first];
+                    if (port->nType == PORT_TYPE_FREE)
+                    {
+                        port->nType             = flags & PORT_MASK_ALL;
+                        port->nLatency          = 0;
+                        port->pPort             = NULL;
+                        strncpy(port->sID, id, MAX_PORT_ID_BYTES);
+                        port->sID[MAX_PORT_ID_BYTES-1]  = '\0';
+
+                        nFirst                  = first + 1;
+                        return port;
+                    }
+                }
+
+                nFirst              = first;
+
+                return NULL;
+            }
+
+            void backend_t::free_port(port_t *port)
+            {
+                if (port == NULL)
+                    return;
+
+                port->nType         = PORT_TYPE_FREE;
+                nFirst              = lsp_min(nFirst, port_id_t(port - vPorts));
+            }
+
+            port_id_t backend_t::register_port(backend_t *self, const char *id, uint32_t flags)
+            {
+                backend_t * const back  = cast(self);
+
+                // Check arguments
+                if (strlen(id) >= MAX_PORT_ID_BYTES)
+                    return -STATUS_TOO_BIG;
+
+                // Determine flags
+                size_t port_flags       = ((flags & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
+                const char *port_type   = NULL;
+                switch (flags & PORT_TYPE_MASK)
+                {
+                    case PORT_TYPE_AUDIO:   port_type = JACK_DEFAULT_AUDIO_TYPE; break;
+                    case PORT_TYPE_MIDI:    port_type = JACK_DEFAULT_MIDI_TYPE; break;
+                    default: return -STATUS_INVALID_VALUE;
+                }
+
+                // Add port
+                port_t * port = back->alloc_port(id, flags);
+                lsp_finally { back->free_port(port); };
+
+                // Register port if connected to client
+                jack_client_t * const client = back->pClient;
+                if (client != NULL)
+                {
+                    // Register port
+                    port->pPort         = jack_port_register(client, port->sID, port_type, port_flags, 0);
+                    if (port->pPort == NULL)
+                        return -STATUS_UNKNOWN_ERR;
+                }
+
+                // Do not free port
+                port                        = NULL;
+                return port_id_t(port - back->vPorts);
+            }
+
+            status_t backend_t::unregister_port(backend_t *self, port_id_t port_id)
+            {
+                backend_t * const back  = cast(self);
+
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return STATUS_INVALID_VALUE;
+
+                port_t * const port = &back->vPorts[port_id];
+                if (port->nType == PORT_TYPE_FREE)
+                    return STATUS_INVALID_VALUE;
+
+                // Unregister port if connected to client
+                jack_client_t * const client = back->pClient;
+                if (client != NULL)
+                {
+                    // Register port
+                    if (jack_port_unregister(client, port->pPort) != 0)
+                        return STATUS_UNKNOWN_ERR;
+                    port->pPort         = NULL;
+                }
+
+                // Free port
+                back->free_port(port);
+                return STATUS_OK;
+            }
+
+            size_t backend_t::audio_buffer_count(backend_t *self, port_id_t port_id)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return 0;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) || (port->pPort == NULL))
+                    return 0;
+                return ((port->nType & PORT_TYPE_MASK) == PORT_TYPE_AUDIO) ? 1 : 0;
+            }
+
+            float *backend_t::audio_buffer(backend_t *self, port_id_t port_id, size_t index)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return NULL;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    ((port->nType & PORT_TYPE_MASK) != PORT_TYPE_AUDIO) ||
+                    (port->pPort == NULL))
+                    return NULL;
+                return static_cast<float *>(jack_port_get_buffer(port->pPort, back->sIOParams.buffer_size));
+            }
+
+            status_t backend_t::set_latency(backend_t *self, port_id_t port_id, uint32_t latency)
+            {
+                backend_t * const back  = cast(self);
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return STATUS_INVALID_VALUE;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE))
+                    return STATUS_INVALID_VALUE;
+                if (port->nLatency == latency)
+                    return STATUS_OK;
+
+                // Store new latency
+                port->nLatency = latency;
+
+                // Query JACK server for latency computation
+                if ((back->pClient != NULL) && (port->pPort != NULL))
+                    jack_recompute_total_latencies(back->pClient);
+
+                return STATUS_OK;
             }
 
             int backend_t::on_buffer_size_changed(jack_nframes_t nframes, void *self)
@@ -306,6 +540,31 @@ namespace lsp
                     npos->beats_per_minute  = 120.0f;
                     npos->ticks_per_beat    = 4096.0f;
                     npos->tick              = 0.0f;
+                }
+
+                return 0;
+            }
+
+            int backend_t::on_latency_sync(jack_latency_callback_mode_t mode, void *self)
+            {
+                backend_t * const back = cast(self);
+                jack_latency_range_t range;
+
+                const uint32_t direction = (mode == JackCaptureLatency) ? PORT_DIR_IN : PORT_DIR_OUT;
+
+                for (size_t i=0, n=back->nCapacity; i<n; ++i)
+                {
+                    port_t * const port = &back->vPorts[i];
+                    if ((port->nType != PORT_TYPE_FREE) &&
+                        ((port->nType & PORT_DIR_MASK) == direction) &&
+                        (port->pPort != NULL))
+                    {
+                        // Report latency
+                        jack_port_get_latency_range(port->pPort, mode, &range);
+                        range.min += port->nLatency;
+                        range.max += port->nLatency;
+                        jack_port_set_latency_range (port->pPort, mode, &range);
+                    }
                 }
 
                 return 0;
