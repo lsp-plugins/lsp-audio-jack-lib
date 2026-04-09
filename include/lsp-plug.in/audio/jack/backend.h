@@ -56,6 +56,7 @@ namespace lsp
                     const callbacks_t  *pCallbacks;
                     io_parameters_t     sIOParams;
                     io_position_t       sIOPosition;
+                    uint32_t            nLatency;
 
                     port_t             *vPorts;
                     port_id_t           nFirst;
@@ -85,11 +86,13 @@ namespace lsp
                         const connection_params_t *params,
                         const callbacks_t *callbacks,
                         void *user_data);
+                    static status_t     set_latency(audio::backend_t *self, uint32_t latency);
                     static status_t     disconnect(audio::backend_t *self);
                     static void         destroy(audio::backend_t *self);
 
                     static port_id_t    register_port(audio::backend_t *self, const char *id, uint32_t flags);
                     static status_t     unregister_port(audio::backend_t *self, port_id_t port_id);
+                    static const char  *port_system_name(audio::backend_t *self, port_id_t port_id);
                     static status_t     set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency);
 
                     static status_t     connect_ports(audio::backend_t *self, const char *source, const char *destination);

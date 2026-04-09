@@ -84,12 +84,14 @@ namespace lsp
                 #define AUDIO_JACK_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
 
                 AUDIO_JACK_BACKEND_EXP(connect);
+                AUDIO_JACK_BACKEND_EXP(set_latency);
                 AUDIO_JACK_BACKEND_EXP(disconnect);
                 AUDIO_JACK_BACKEND_EXP(destroy);
 
                 AUDIO_JACK_BACKEND_EXP(register_port);
                 AUDIO_JACK_BACKEND_EXP(unregister_port);
                 AUDIO_JACK_BACKEND_EXP(set_port_latency);
+                AUDIO_JACK_BACKEND_EXP(port_system_name);
 
                 AUDIO_JACK_BACKEND_EXP(connect_ports);
                 AUDIO_JACK_BACKEND_EXP(disconnect_ports);
@@ -278,6 +280,18 @@ namespace lsp
                 return STATUS_OK;
             }
 
+            status_t backend_t::set_latency(audio::backend_t *self, uint32_t latency)
+            {
+                backend_t * const back          = cast(self);
+                if (back->nLatency == latency)
+                    return STATUS_OK;
+
+                back->nLatency                  = latency;
+                if (back->pClient)
+                    jack_recompute_total_latencies(back->pClient);
+                return STATUS_OK;
+            }
+
             status_t backend_t::disconnect(audio::backend_t *self)
             {
                 backend_t * const back          = cast(self);
@@ -443,6 +457,21 @@ namespace lsp
                 // Free port
                 back->free_port(port);
                 return STATUS_OK;
+            }
+
+            const char *backend_t::port_system_name(audio::backend_t *self, port_id_t port_id)
+            {
+                backend_t * const back  = cast(self);
+
+                if ((port_id < 0) || (port_id >= back->nCapacity))
+                    return NULL;
+
+                port_t * const port = &back->vPorts[port_id];
+                if ((port->nType == PORT_TYPE_FREE) ||
+                    (port->pPort == NULL))
+                    return NULL;
+
+                return jack_port_name(port->pPort);
             }
 
             status_t backend_t::set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency)
@@ -691,6 +720,7 @@ namespace lsp
                 jack_latency_range_t range;
 
                 const uint32_t direction = (mode == JackCaptureLatency) ? PORT_DIR_IN : PORT_DIR_OUT;
+                const uint32_t latency = (mode == JackCaptureLatency) ? back->nLatency : 0;
 
                 for (size_t i=0, n=back->nCapacity; i<n; ++i)
                 {
@@ -701,9 +731,9 @@ namespace lsp
                     {
                         // Report latency
                         jack_port_get_latency_range(port->pPort, mode, &range);
-                        range.min += port->nLatency;
-                        range.max += port->nLatency;
-                        jack_port_set_latency_range (port->pPort, mode, &range);
+                        range.min += latency + port->nLatency;
+                        range.max += latency + port->nLatency;
+                        jack_port_set_latency_range(port->pPort, mode, &range);
                     }
                 }
 
