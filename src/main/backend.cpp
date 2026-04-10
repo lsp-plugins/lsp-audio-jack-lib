@@ -56,13 +56,14 @@ namespace lsp
 
             void backend_t::construct()
             {
-                pClient                     = NULL;
-                pUserData                   = NULL;
-                pCallbacks                  = NULL;
+                pClient                         = NULL;
+                pUserData                       = NULL;
+                pCallbacks                      = NULL;
 
-                sIOParams.sample_rate       = 0;
-                sIOParams.buffer_size       = 0;
-                sIOParams.max_buffer_size   = 0;
+                io_parameters_t * const ip      = &sIOParams;
+                ip->sample_rate                 = 0;
+                ip->buffer_size                 = 0;
+                ip->max_buffer_size             = 0;
 
                 io_position_t * const npos      = &sIOPosition;
                 npos->frame                     = 0;
@@ -76,9 +77,10 @@ namespace lsp
                 npos->beats_per_minute_change   = 0.0f;
                 npos->ticks_per_beat            = 4096.0f;
 
-                vPorts                      = NULL;
-                nFirst                      = 0;
-                nCapacity                   = 0;
+                nLatency                        = 0;
+                vPorts                          = NULL;
+                nFirst                          = 0;
+                nCapacity                       = 0;
 
                 // Export virtual table
                 #define AUDIO_JACK_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
@@ -246,6 +248,21 @@ namespace lsp
                     return res;
                 }
 
+                // Commit state
+                back->pClient       = client;
+                back->pUserData     = user_data;
+                back->pCallbacks    = callbacks;
+                back->sIOParams     = io_params;
+
+                lsp_finally {
+                    if (client != NULL)
+                    {
+                        back->pClient       = NULL;
+                        back->pUserData     = NULL;
+                        back->pCallbacks    = NULL;
+                    }
+                };
+
                 // Issue connected callback
                 res = ((callbacks) && (callbacks->on_connected)) ?
                     callbacks->on_connected(user_data, &io_params) :
@@ -271,11 +288,8 @@ namespace lsp
                 if (res != STATUS_OK)
                     return res;
 
-                // Commit state
-                back->pClient       = release_ptr(client);
-                back->pUserData     = user_data;
-                back->pCallbacks    = callbacks;
-                back->sIOParams     = io_params;
+                // Do not close client on successful connection
+                client              = NULL;
 
                 return STATUS_OK;
             }
@@ -313,8 +327,27 @@ namespace lsp
                 if ((cb) && (cb->on_disconnected))
                     cb->on_disconnected(back->pUserData);
 
-                // Cleanup state
-                back->construct();
+                // Forget the client
+                back->pClient                   = NULL;
+
+                // Cleanup I/O parameters
+                io_parameters_t * const ip      = &back->sIOParams;
+                ip->sample_rate                 = 0;
+                ip->buffer_size                 = 0;
+                ip->max_buffer_size             = 0;
+
+                // Cleanup I/O position
+                io_position_t * const npos      = &back->sIOPosition;
+                npos->frame                     = 0;
+                npos->bar                       = 0;
+                npos->beat                      = 0;
+                npos->tick                      = 0;
+                npos->speed                     = 1.0f;
+                npos->numerator                 = 4.0f;
+                npos->denominator               = 4.0f;
+                npos->beats_per_minute          = 120.0f;
+                npos->beats_per_minute_change   = 0.0f;
+                npos->ticks_per_beat            = 4096.0f;
 
                 return res;
             }
@@ -330,7 +363,10 @@ namespace lsp
                 back->nFirst                = 0;
                 back->nCapacity             = 0;
                 if (back->vPorts != NULL)
+                {
                     free(back->vPorts);
+                    back->vPorts                = NULL;
+                }
 
                 // Deallocate memory
                 free(self);
@@ -352,13 +388,20 @@ namespace lsp
                 // Check that memory should be re-allocated
                 if (first >= capacity)
                 {
-                    const size_t new_cap    = lsp_max((nCapacity << 1), 4);
-                    port_t * const items    = static_cast<port_t *>(realloc(vPorts, sizeof(port_t) * capacity));
+                    const size_t new_cap    = lsp_max((capacity << 1), 4u);
+                    port_t * const items    = static_cast<port_t *>(realloc(vPorts, sizeof(port_t) * new_cap));
                     if (!items)
                         return NULL;
 
                     for (size_t i=capacity; i<new_cap; ++i)
-                        items[i].nType          = PORT_TYPE_FREE;
+                    {
+                        port_t * const port     = &items[i];
+                        port->nType             = PORT_TYPE_FREE;
+                        port->nLatency          = 0;
+                        port->pPort             = NULL;
+                        port->pBuffer           = NULL;
+                        port->sID[0]            = '\0';
+                    }
 
                     capacity                = new_cap;
                     vPorts                  = items;
@@ -429,8 +472,7 @@ namespace lsp
                 }
 
                 // Do not free port
-                port                        = NULL;
-                return port_id_t(port - back->vPorts);
+                return port_id_t(release_ptr(port) - back->vPorts);
             }
 
             status_t backend_t::unregister_port(audio::backend_t *self, port_id_t port_id)
@@ -446,16 +488,20 @@ namespace lsp
 
                 // Unregister port if connected to client
                 jack_client_t * const client = back->pClient;
+                if (port->pPort == NULL)
+                    return (client == NULL) ? STATUS_OK : STATUS_BAD_STATE;
+
                 if (client != NULL)
                 {
                     // Register port
                     if (jack_port_unregister(client, port->pPort) != 0)
                         return STATUS_UNKNOWN_ERR;
-                    port->pPort         = NULL;
                 }
 
                 // Free port
+                port->pPort         = NULL;
                 back->free_port(port);
+
                 return STATUS_OK;
             }
 
@@ -616,6 +662,9 @@ namespace lsp
             int backend_t::on_buffer_size_changed(jack_nframes_t nframes, void *self)
             {
                 backend_t * const back = cast(self);
+                if (back->sIOParams.buffer_size == nframes)
+                    return 0;
+
                 back->sIOParams.buffer_size         = nframes;
                 back->sIOParams.max_buffer_size     = nframes;
 
@@ -629,6 +678,9 @@ namespace lsp
             int backend_t::on_sample_rate_changed(jack_nframes_t nframes, void *self)
             {
                 backend_t * const back = cast(self);
+                if (back->sIOParams.sample_rate == nframes)
+                    return 0;
+
                 back->sIOParams.sample_rate         = nframes;
 
                 const callbacks_t * const cb = back->pCallbacks;
