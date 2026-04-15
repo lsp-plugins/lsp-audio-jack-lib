@@ -459,6 +459,8 @@ namespace lsp
 
                 // Add port
                 port_t *port = back->alloc_port(id, flags);
+                if (port == NULL)
+                    return -STATUS_NO_MEM;
                 lsp_finally { back->free_port(port); };
 
                 // Register port if connected to client
