@@ -36,7 +36,7 @@ namespace lsp
                 {
                     "jack",
                     "Jack Audio Backend",
-                    "jack_audio_backend",
+                    "jack",
                     100
                 }
             };
