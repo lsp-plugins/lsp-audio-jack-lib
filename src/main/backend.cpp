@@ -197,10 +197,10 @@ namespace lsp
                 };
 
                 // Obtain I/O parameters
-                io_parameters_t io_params;
-                io_params.sample_rate       = jack_get_sample_rate(client);
-                io_params.buffer_size       = jack_get_buffer_size(client);
-                io_params.max_buffer_size   = io_params.buffer_size;
+                io_parameters_t * const io  = & back->sIOParams;
+                io->sample_rate             = jack_get_sample_rate(client);
+                io->buffer_size             = jack_get_buffer_size(client);
+                io->max_buffer_size         = io->buffer_size;
 
                 // Set-up shutdown handler
                 jack_on_shutdown(client, on_shutdown, back);
@@ -252,7 +252,6 @@ namespace lsp
                 back->pClient       = client;
                 back->pUserData     = user_data;
                 back->pCallbacks    = callbacks;
-                back->sIOParams     = io_params;
 
                 lsp_finally {
                     if (client != NULL)
@@ -265,7 +264,7 @@ namespace lsp
 
                 // Issue connected callback
                 res = ((callbacks) && (callbacks->on_connected)) ?
-                    callbacks->on_connected(user_data, &io_params) :
+                    callbacks->on_connected(user_data, io) :
                     STATUS_OK;
                 lsp_finally {
                     if ((client != NULL) && (callbacks) && (callbacks->on_connection_lost))
@@ -669,6 +668,9 @@ namespace lsp
                 back->sIOParams.buffer_size         = nframes;
                 back->sIOParams.max_buffer_size     = nframes;
 
+                if (back->pClient == NULL)
+                    return 0;
+
                 const callbacks_t * const cb = back->pCallbacks;
                 const status_t res = ((cb) && (cb->on_io_changed)) ?
                     cb->on_io_changed(back->pUserData, &back->sIOParams) :
@@ -683,6 +685,9 @@ namespace lsp
                     return 0;
 
                 back->sIOParams.sample_rate         = nframes;
+
+                if (back->pClient == NULL)
+                    return 0;
 
                 const callbacks_t * const cb = back->pCallbacks;
                 const status_t res = ((cb) && (cb->on_io_changed)) ?
