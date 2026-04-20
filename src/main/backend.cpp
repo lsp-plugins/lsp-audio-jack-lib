@@ -527,7 +527,7 @@ namespace lsp
                     return STATUS_INVALID_VALUE;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType == PORT_TYPE_FREE))
+                if (port->nType == PORT_TYPE_FREE)
                     return STATUS_INVALID_VALUE;
                 if (port->nLatency == latency)
                     return STATUS_OK;
