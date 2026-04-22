@@ -1,6 +1,6 @@
 # lsp-audio-jack-lib
 
-Audio backend for JACK
+Audio backend for JACK.
 
 Requirements
 ======
@@ -9,6 +9,12 @@ The following packages need to be installed for building:
 
 * gcc >= 4.9
 * make >= 4.0
+
+## Supported platforms
+
+The build and correct unit test execution has been confirmed for following platforms:
+* FreeBSD
+* GNU/Linux
 
 Building
 ======
