@@ -83,29 +83,29 @@ namespace lsp
                 nCapacity                       = 0;
 
                 // Export virtual table
-                #define AUDIO_JACK_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
+                #define AUDIO_PIPEWIRE_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
 
-                AUDIO_JACK_BACKEND_EXP(connect);
-                AUDIO_JACK_BACKEND_EXP(set_latency);
-                AUDIO_JACK_BACKEND_EXP(disconnect);
-                AUDIO_JACK_BACKEND_EXP(destroy);
+                AUDIO_PIPEWIRE_BACKEND_EXP(connect);
+                AUDIO_PIPEWIRE_BACKEND_EXP(set_latency);
+                AUDIO_PIPEWIRE_BACKEND_EXP(disconnect);
+                AUDIO_PIPEWIRE_BACKEND_EXP(destroy);
 
-                AUDIO_JACK_BACKEND_EXP(register_port);
-                AUDIO_JACK_BACKEND_EXP(unregister_port);
-                AUDIO_JACK_BACKEND_EXP(set_port_latency);
-                AUDIO_JACK_BACKEND_EXP(port_system_name);
+                AUDIO_PIPEWIRE_BACKEND_EXP(register_port);
+                AUDIO_PIPEWIRE_BACKEND_EXP(unregister_port);
+                AUDIO_PIPEWIRE_BACKEND_EXP(set_port_latency);
+                AUDIO_PIPEWIRE_BACKEND_EXP(port_system_name);
 
-                AUDIO_JACK_BACKEND_EXP(connect_ports);
-                AUDIO_JACK_BACKEND_EXP(disconnect_ports);
+                AUDIO_PIPEWIRE_BACKEND_EXP(connect_ports);
+                AUDIO_PIPEWIRE_BACKEND_EXP(disconnect_ports);
 
-                AUDIO_JACK_BACKEND_EXP(audio_buffers_count);
-                AUDIO_JACK_BACKEND_EXP(get_audio_buffer);
+                AUDIO_PIPEWIRE_BACKEND_EXP(audio_buffers_count);
+                AUDIO_PIPEWIRE_BACKEND_EXP(get_audio_buffer);
 
-                AUDIO_JACK_BACKEND_EXP(midi_events_count);
-                AUDIO_JACK_BACKEND_EXP(read_midi_event);
-                AUDIO_JACK_BACKEND_EXP(write_midi_event);
+                AUDIO_PIPEWIRE_BACKEND_EXP(midi_events_count);
+                AUDIO_PIPEWIRE_BACKEND_EXP(read_midi_event);
+                AUDIO_PIPEWIRE_BACKEND_EXP(write_midi_event);
 
-                #undef AUDIO_JACK_BACKEND_EXP
+                #undef AUDIO_PIPEWIRE_BACKEND_EXP
             }
 
             status_t backend_t::register_ports(jack_client_t *client)
@@ -355,7 +355,7 @@ namespace lsp
                 backend_t * const back          = cast(self);
 
                 // Issue disconnect and free allocated memory
-                disconnect(self);
+                disconnect(back);
 
                 // Free allocated memory for ports
                 back->nFirst                = 0;
@@ -367,15 +367,7 @@ namespace lsp
                 }
 
                 // Deallocate memory
-                free(self);
-            }
-
-            void backend_t::on_shutdown(void *self)
-            {
-                backend_t * const back = cast(self);
-                const callbacks_t * const cb = back->pCallbacks;
-                if ((cb) && (cb->on_connection_lost))
-                    cb->on_connection_lost(back->pUserData);
+                free(back);
             }
 
             backend_t::port_t *backend_t::alloc_port(const char *id, uint32_t flags)
@@ -657,6 +649,14 @@ namespace lsp
 
                 // Submit MIDI event
                 return reinterpret_cast<uint8_t *>(jack_midi_event_reserve(port->pBuffer, timestamp, size));
+            }
+
+            void backend_t::on_shutdown(void *self)
+            {
+                backend_t * const back = cast(self);
+                const callbacks_t * const cb = back->pCallbacks;
+                if ((cb) && (cb->on_connection_lost))
+                    cb->on_connection_lost(back->pUserData);
             }
 
             int backend_t::on_buffer_size_changed(jack_nframes_t nframes, void *self)
