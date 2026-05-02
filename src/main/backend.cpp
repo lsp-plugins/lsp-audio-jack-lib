@@ -92,7 +92,6 @@ namespace lsp
 
                 AUDIO_PIPEWIRE_BACKEND_EXP(register_port);
                 AUDIO_PIPEWIRE_BACKEND_EXP(unregister_port);
-                AUDIO_PIPEWIRE_BACKEND_EXP(set_port_latency);
                 AUDIO_PIPEWIRE_BACKEND_EXP(port_system_name);
 
                 AUDIO_PIPEWIRE_BACKEND_EXP(connect_ports);
@@ -387,7 +386,6 @@ namespace lsp
                     {
                         port_t * const port     = &items[i];
                         port->nType             = PORT_TYPE_FREE;
-                        port->nLatency          = 0;
                         port->pPort             = NULL;
                         port->pBuffer           = NULL;
                         port->sID[0]            = '\0';
@@ -405,7 +403,6 @@ namespace lsp
                     if (port->nType == PORT_TYPE_FREE)
                     {
                         port->nType             = flags & PORT_MASK_ALL;
-                        port->nLatency          = 0;
                         port->pPort             = NULL;
                         strncpy(port->sID, id, MAX_PORT_ID_BYTES);
                         port->sID[MAX_PORT_ID_BYTES-1]  = '\0';
@@ -510,28 +507,6 @@ namespace lsp
                     return NULL;
 
                 return jack_port_name(port->pPort);
-            }
-
-            status_t backend_t::set_port_latency(audio::backend_t *self, port_id_t port_id, uint32_t latency)
-            {
-                backend_t * const back  = cast(self);
-                if ((port_id < 0) || (port_id >= back->nCapacity))
-                    return STATUS_INVALID_VALUE;
-
-                port_t * const port = &back->vPorts[port_id];
-                if (port->nType == PORT_TYPE_FREE)
-                    return STATUS_INVALID_VALUE;
-                if (port->nLatency == latency)
-                    return STATUS_OK;
-
-                // Store new latency
-                port->nLatency = latency;
-
-                // Query JACK server for latency computation
-                if ((back->pClient != NULL) && (port->pPort != NULL))
-                    jack_recompute_total_latencies(back->pClient);
-
-                return STATUS_OK;
             }
 
             status_t backend_t::connect_ports(audio::backend_t *self, const char *source, const char *destination)
@@ -775,22 +750,23 @@ namespace lsp
             int backend_t::on_latency_sync(jack_latency_callback_mode_t mode, void *self)
             {
                 backend_t * const back = cast(self);
-                jack_latency_range_t range;
+                if (mode != JackCaptureLatency)
+                    return 0;
 
-                const uint32_t direction = (mode == JackCaptureLatency) ? PORT_DIR_IN : PORT_DIR_OUT;
-                const uint32_t latency = (mode == JackCaptureLatency) ? back->nLatency : 0;
+                jack_latency_range_t range;
+                const uint32_t latency = back->nLatency;
 
                 for (size_t i=0, n=back->nCapacity; i<n; ++i)
                 {
                     port_t * const port = &back->vPorts[i];
                     if ((port->nType != PORT_TYPE_FREE) &&
-                        ((port->nType & PORT_DIR_MASK) == direction) &&
+                        ((port->nType & PORT_DIR_MASK) == PORT_DIR_OUT) &&
                         (port->pPort != NULL))
                     {
-                        // Report latency
+                        // Report latency for the input port
                         jack_port_get_latency_range(port->pPort, mode, &range);
-                        range.min += latency + port->nLatency;
-                        range.max += latency + port->nLatency;
+                        range.min += latency;
+                        range.max += latency;
                         jack_port_set_latency_range(port->pPort, mode, &range);
                     }
                 }
