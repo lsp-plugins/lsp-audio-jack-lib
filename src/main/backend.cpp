@@ -81,6 +81,7 @@ namespace lsp
                 vPorts                          = NULL;
                 nFirst                          = 0;
                 nCapacity                       = 0;
+                bActivated                      = false;
 
                 // Export virtual table
                 #define AUDIO_PIPEWIRE_BACKEND_EXP(func)   audio::backend_t::func = backend_t::func;
@@ -278,10 +279,17 @@ namespace lsp
                     STATUS_OK;
                 if (res != STATUS_OK)
                     return res;
+                back->bActivated    = true;
 
-                if (jack_activate(client))
+                if (jack_activate(client) != 0)
                 {
                     lsp_error("Could not activate JACK client");
+
+                    // Issue deactivation callback
+                    back->bActivated    = false;
+                    if ((callbacks) && (callbacks->on_activated))
+                        callbacks->on_deactivated(user_data);
+
                     return STATUS_DISCONNECTED;
                 }
 
@@ -311,10 +319,18 @@ namespace lsp
                     return STATUS_BAD_STATE;
 
                 // Deactivate application
-                jack_deactivate(client);
-                const callbacks_t * const cb = back->pCallbacks;
-                status_t res = ((cb) && (cb->on_deactivated)) ?
-                    cb->on_deactivated(back->pUserData) : STATUS_OK;
+                status_t res                    = STATUS_OK;
+                const callbacks_t * const cb    = back->pCallbacks;
+                void * const user_data          = back->pUserData;
+
+                if (back->bActivated)
+                {
+                    jack_deactivate(client);
+
+                    back->bActivated                = false;
+                    if ((cb) && (cb->on_deactivated))
+                        res     = update_status(res, cb->on_deactivated(user_data));
+                }
 
                 // Unregister ports
                 back->unregister_ports(client);
@@ -322,7 +338,7 @@ namespace lsp
                 // Close client connection
                 jack_client_close(client);
                 if ((cb) && (cb->on_disconnected))
-                    cb->on_disconnected(back->pUserData);
+                    cb->on_disconnected(user_data);
 
                 // Forget the client
                 back->pClient                   = NULL;

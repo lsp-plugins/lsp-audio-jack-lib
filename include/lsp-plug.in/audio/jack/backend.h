@@ -60,6 +60,7 @@ namespace lsp
                     port_t             *vPorts;
                     port_id_t           nFirst;
                     port_id_t           nCapacity;
+                    bool                bActivated;
 
                 protected:
                     port_t             *alloc_port(const char *id, uint32_t flags);
