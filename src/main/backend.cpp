@@ -279,19 +279,18 @@ namespace lsp
                     STATUS_OK;
                 if (res != STATUS_OK)
                     return res;
-                back->bActivated    = true;
 
                 if (jack_activate(client) != 0)
                 {
                     lsp_error("Could not activate JACK client");
 
                     // Issue deactivation callback
-                    back->bActivated    = false;
                     if ((callbacks) && (callbacks->on_activated))
                         callbacks->on_deactivated(user_data);
 
                     return STATUS_DISCONNECTED;
                 }
+                back->bActivated    = true;
 
                 // Do not close client on successful connection
                 client              = NULL;
