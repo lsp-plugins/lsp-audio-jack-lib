@@ -285,7 +285,7 @@ namespace lsp
                     lsp_error("Could not activate JACK client");
 
                     // Issue deactivation callback
-                    if ((callbacks) && (callbacks->on_activated))
+                    if ((callbacks) && (callbacks->on_deactivated))
                         callbacks->on_deactivated(user_data);
 
                     return STATUS_DISCONNECTED;
