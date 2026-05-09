@@ -605,7 +605,7 @@ namespace lsp
                     return 0;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType != PORT_MIDI_IN) ||
+                if (((port->nType != PORT_MIDI_IN) && (port->nType != PORT_MIDI2_IN)) ||
                     (port->pBuffer == NULL))
                     return 0;
 
@@ -622,7 +622,7 @@ namespace lsp
                     return STATUS_INVALID_VALUE;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType != PORT_MIDI_IN) ||
+                if (((port->nType != PORT_MIDI_IN) && (port->nType != PORT_MIDI2_IN)) ||
                     (port->pBuffer == NULL))
                     return STATUS_BAD_FORMAT;
 
@@ -648,7 +648,7 @@ namespace lsp
                     return NULL;
 
                 port_t * const port = &back->vPorts[port_id];
-                if ((port->nType != PORT_MIDI_OUT) ||
+                if (((port->nType != PORT_MIDI_OUT) && (port->nType != PORT_MIDI2_OUT)) ||
                     (port->pBuffer == NULL))
                     return NULL;
 
@@ -719,7 +719,8 @@ namespace lsp
                             continue;
 
                         port->pBuffer = jack_port_get_buffer(port->pPort, nframes);
-                        if ((port->nType == PORT_MIDI_OUT) && (port->pBuffer != NULL))
+                        if (((port->nType == PORT_MIDI_OUT) || (port->nType == PORT_MIDI2_OUT)) &&
+                            (port->pBuffer != NULL))
                             jack_midi_clear_buffer(port->pBuffer);
                     }
 
