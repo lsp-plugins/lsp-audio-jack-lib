@@ -104,7 +104,6 @@ namespace lsp
                 AUDIO_PIPEWIRE_BACKEND_EXP(audio_buffers_count);
                 AUDIO_PIPEWIRE_BACKEND_EXP(get_audio_buffer);
 
-                AUDIO_PIPEWIRE_BACKEND_EXP(midi_events_count);
                 AUDIO_PIPEWIRE_BACKEND_EXP(read_midi_event);
                 AUDIO_PIPEWIRE_BACKEND_EXP(write_midi_event);
 
@@ -601,23 +600,9 @@ namespace lsp
                 return static_cast<float *>(port->pBuffer);
             }
 
-            size_t backend_t::midi_events_count(audio::backend_t *self, port_id_t port_id)
+            status_t backend_t::read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t *index)
             {
-                backend_t * const back  = cast(self);
-                if ((port_id < 0) || (port_id >= back->nCapacity))
-                    return 0;
-
-                port_t * const port = &back->vPorts[port_id];
-                if (((port->nType != PORT_MIDI_IN) && (port->nType != PORT_MIDI2_IN)) ||
-                    (port->pBuffer == NULL))
-                    return 0;
-
-                return jack_midi_get_event_count(port->pBuffer);
-            }
-
-            status_t backend_t::read_midi_event(audio::backend_t *self, port_id_t port_id, midi_event_t *event, uint32_t index)
-            {
-                if (event == NULL)
+                if ((event == NULL) || (index == NULL))
                     return STATUS_BAD_ARGUMENTS;
 
                 backend_t * const back  = cast(self);
@@ -630,13 +615,20 @@ namespace lsp
                     return STATUS_BAD_FORMAT;
 
                 // Obtain MIDI event
+                const uint32_t ev_id    = *index;
+                const auto num_events   = jack_midi_get_event_count(port->pBuffer);
+                if (ev_id >= num_events)
+                    return STATUS_NO_DATA;
+
+                // Fetch the event
                 jack_midi_event_t ev;
-                const int result = jack_midi_event_get(&ev, port->pBuffer, index);
+                const int result = jack_midi_event_get(&ev, port->pBuffer, *index);
                 if (result == 0)
                 {
                     event->timestamp        = uint32_t(ev.time);
                     event->size             = uint32_t(ev.size);
                     event->data             = reinterpret_cast<uint8_t *>(ev.buffer);
+                    ++(*index);
 
                     return STATUS_OK;
                 }
