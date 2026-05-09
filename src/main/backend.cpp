@@ -108,6 +108,32 @@ namespace lsp
                 #undef AUDIO_PIPEWIRE_BACKEND_EXP
             }
 
+            status_t backend_t::register_port(jack_client_t *client, port_t *port)
+            {
+                // Determine flags
+                size_t port_flags       = ((port->nType & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
+                const char *port_type   = NULL;
+                switch (port->nType & PORT_TYPE_MASK)
+                {
+                    case PORT_TYPE_AUDIO:
+                        port_type           = JACK_DEFAULT_AUDIO_TYPE;
+                        break;
+                    case PORT_TYPE_MIDI:
+                        port_type           = JACK_DEFAULT_MIDI_TYPE;
+                        break;
+                    case PORT_TYPE_MIDI2:
+                        port_type           = JACK_DEFAULT_MIDI_TYPE;
+                        port_flags         |= JackPortIsMIDI2;
+                        break;
+                    default:
+                        return STATUS_BAD_STATE;
+                }
+
+                // Register port
+                port->pPort         = jack_port_register(client, port->sID, port_type, port_flags, 0);
+                return (port->pPort != NULL) ? STATUS_OK : STATUS_UNKNOWN_ERR;
+            }
+
             status_t backend_t::register_ports(jack_client_t *client)
             {
                 for (size_t i=0, n=nCapacity; i<n; ++i)
@@ -117,20 +143,9 @@ namespace lsp
                         (port->pPort != NULL))
                         continue;
 
-                    // Determine flags
-                    size_t port_flags       = ((port->nType & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
-                    const char *port_type   = NULL;
-                    switch (port->nType & PORT_TYPE_MASK)
-                    {
-                        case PORT_TYPE_AUDIO:   port_type = JACK_DEFAULT_AUDIO_TYPE; break;
-                        case PORT_TYPE_MIDI:    port_type = JACK_DEFAULT_MIDI_TYPE; break;
-                        default: return STATUS_BAD_STATE;
-                    }
-
-                    // Register port
-                    port->pPort         = jack_port_register(client, port->sID, port_type, port_flags, 0);
-                    if (port->pPort == NULL)
-                        return STATUS_UNKNOWN_ERR;
+                    status_t res        = register_port(client, port);
+                    if (res != STATUS_OK)
+                        return res;
                 }
 
                 return STATUS_OK;
@@ -450,13 +465,14 @@ namespace lsp
                     return -STATUS_TOO_BIG;
 
                 // Determine flags
-                size_t port_flags       = ((flags & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
-                const char *port_type   = NULL;
                 switch (flags & PORT_TYPE_MASK)
                 {
-                    case PORT_TYPE_AUDIO:   port_type = JACK_DEFAULT_AUDIO_TYPE; break;
-                    case PORT_TYPE_MIDI:    port_type = JACK_DEFAULT_MIDI_TYPE; break;
-                    default: return -STATUS_INVALID_VALUE;
+                    case PORT_TYPE_AUDIO:
+                    case PORT_TYPE_MIDI:
+                    case PORT_TYPE_MIDI2:
+                        break;
+                    default:
+                        return -STATUS_INVALID_VALUE;
                 }
 
                 // Add port
@@ -469,10 +485,9 @@ namespace lsp
                 jack_client_t * const client = back->pClient;
                 if (client != NULL)
                 {
-                    // Register port
-                    port->pPort         = jack_port_register(client, port->sID, port_type, port_flags, 0);
-                    if (port->pPort == NULL)
-                        return -STATUS_UNKNOWN_ERR;
+                    status_t res = back->register_port(client, port);
+                    if (res != STATUS_OK)
+                        return -port_id_t(res);
                 }
 
                 // Do not free port

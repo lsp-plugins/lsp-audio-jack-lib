@@ -65,6 +65,7 @@ namespace lsp
                 protected:
                     port_t             *alloc_port(const char *id, uint32_t flags);
                     void                free_port(port_t *port);
+                    status_t            register_port(jack_client_t *client, port_t *port);
                     status_t            register_ports(jack_client_t *client);
                     void                unregister_ports(jack_client_t *client);
 
