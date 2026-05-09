@@ -36,6 +36,9 @@ namespace lsp
     {
         namespace jack
         {
+            // Definition for header files that do not support this flag
+            static constexpr uint32_t JackPortIsMIDI2       = 0x20;
+
             static constexpr uint32_t PORT_TYPE_FREE        = 0xffffffff;
             static constexpr uint32_t PORT_MASK_ALL         = PORT_DIR_MASK | PORT_TYPE_MASK;
 
@@ -111,7 +114,7 @@ namespace lsp
             status_t backend_t::register_port(jack_client_t *client, port_t *port)
             {
                 // Determine flags
-                size_t port_flags       = ((port->nType & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
+                unsigned long port_flags= ((port->nType & PORT_DIR_MASK) == PORT_DIR_OUT) ? JackPortIsOutput : JackPortIsInput;
                 const char *port_type   = NULL;
                 switch (port->nType & PORT_TYPE_MASK)
                 {
