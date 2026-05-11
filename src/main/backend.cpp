@@ -769,6 +769,7 @@ namespace lsp
                     npos->ticks_per_beat    = 4096.0f;
                     npos->tick              = 0.0f;
                 }
+                npos->beats_per_minute_change = 0;
 
                 return 0;
             }
