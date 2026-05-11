@@ -756,7 +756,6 @@ namespace lsp
                     npos->denominator       = pos->beat_type;
                     npos->beats_per_minute  = pos->beats_per_minute;
                     npos->ticks_per_beat    = pos->ticks_per_beat;
-                    npos->tick              = pos->tick;
                 }
                 else
                 {
@@ -767,7 +766,6 @@ namespace lsp
                     npos->denominator       = 4.0f;
                     npos->beats_per_minute  = 120.0f;
                     npos->ticks_per_beat    = 4096.0f;
-                    npos->tick              = 0.0f;
                 }
                 npos->beats_per_minute_change = 0;
 
