@@ -744,7 +744,7 @@ namespace lsp
 
                 // Update I/O position
                 io_position_t *npos = &back->sIOPosition;
-                npos->speed         = (state == JackTransportRolling) ? 1.0f : 0.0f;
+                npos->speed         = ((state == JackTransportRolling) || (state == JackTransportLooping)) ? 1.0f : 0.0f;
                 npos->frame         = pos->frame;
 
                 if (pos->valid & JackPositionBBT)
