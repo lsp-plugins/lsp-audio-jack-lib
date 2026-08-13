@@ -23,4 +23,4 @@ ARTIFACT_ID                 = LSP_AUDIO_JACK_LIB
 ARTIFACT_NAME               = lsp-audio-jack-lib
 ARTIFACT_DESC               = Audio backend for JACK audio subsystem
 ARTIFACT_HEADERS            = lsp-plug.in
-ARTIFACT_VERSION            = 1.0.1
+ARTIFACT_VERSION            = 1.0.2-devel
