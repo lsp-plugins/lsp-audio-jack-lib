@@ -187,7 +187,7 @@ namespace lsp
                         free(client_name);
                 };
 
-                if (params->client_name != NULL)
+                if ((params->client_name != NULL) && (strlen(params->client_name) > 0))
                 {
                     const size_t max_client_size    = jack_client_name_size();
                     client_name         = static_cast<char *>(malloc(max_client_size));
@@ -200,7 +200,7 @@ namespace lsp
 
                 // Get JACK client
                 jack_status_t jack_status;
-                jack_client_t *client = (params->url != NULL) ?
+                jack_client_t *client = ((params->url != NULL) && (strlen(params->url) > 0)) ?
                     jack_client_open(client_name, jack_options_t(JackNoStartServer | JackServerName), &jack_status, params->url) :
                     jack_client_open(client_name, JackNoStartServer, &jack_status);
                 if (client == NULL)
