@@ -3,7 +3,7 @@
 *******************************************************************************
 
 === 1.0.2 ===
-
+* Bugfix of connection problem that could not be detected under PipeWire.
 
 === 1.0.1 ===
 * Updated build scripts.
