@@ -4,6 +4,7 @@
 
 === 1.0.2 ===
 * Bugfix of connection problem that could not be detected under PipeWire.
+* Updated build scripts.
 
 === 1.0.1 ===
 * Updated build scripts.
