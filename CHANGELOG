@@ -2,6 +2,9 @@
 * RECENT CHANGES
 *******************************************************************************
 
+=== 1.0.3 ===
+
+
 === 1.0.2 ===
 * Bugfix of connection problem that could not be detected under PipeWire.
 * Updated build scripts.
